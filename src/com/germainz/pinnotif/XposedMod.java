@@ -13,16 +13,22 @@ import android.provider.Settings;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 
+import de.robv.android.xposed.IXposedHookInitPackageResources;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.callbacks.XC_InitPackageResources;
+import de.robv.android.xposed.callbacks.XC_LayoutInflated;
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
 
 import static de.robv.android.xposed.XposedBridge.hookAllMethods;
@@ -35,7 +41,7 @@ import static de.robv.android.xposed.XposedHelpers.getIntField;
 import static de.robv.android.xposed.XposedHelpers.getObjectField;
 import static de.robv.android.xposed.XposedHelpers.setObjectField;
 
-public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit {
+public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitPackageResources {
 
     private static String TEXT_PIN;
     private static String TEXT_UNPIN;
@@ -50,6 +56,8 @@ public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit 
     private static final int ID_INDEX;
     private static final int NOTIFICATION_INDEX;
     private static final int USERID_INDEX;
+
+    XModuleResources res;
 
     static {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
@@ -67,7 +75,7 @@ public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit 
 
     @Override
     public void initZygote(StartupParam startupParam) throws Throwable {
-        XModuleResources res = XModuleResources.createInstance(startupParam.modulePath, null);
+        res = XModuleResources.createInstance(startupParam.modulePath, null);
         TEXT_PIN = res.getString(R.string.text_pin);
         TEXT_UNPIN = res.getString(R.string.text_unpin);
         TEXT_APP_INFO = res.getString(R.string.text_app_info);
@@ -196,6 +204,7 @@ public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit 
     }
 
     private static void hookLongPressNotif(Class<?> baseStatusBar) {
+        /*
         findAndHookMethod(baseStatusBar, "getNotificationLongClicker",
                 new XC_MethodReplacement() {
                     protected Object replaceHookedMethod(final MethodHookParam param) throws Throwable {
@@ -256,7 +265,7 @@ public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit 
                     }
                 }
         );
-
+         */
     }
 
     private static void sendBroadcast(Context context, Object sbn, Notification n) {
@@ -319,5 +328,27 @@ public class XposedMod implements IXposedHookLoadPackage, IXposedHookZygoteInit 
         }
     }
 
+    @Override
+    public void handleInitPackageResources(XC_InitPackageResources.InitPackageResourcesParam resparam) throws Throwable {
+        if (!resparam.packageName.equals("com.android.systemui"))
+            return;
+
+        resparam.res.hookLayout("com.android.systemui", "layout", "notification_guts", new XC_LayoutInflated() {
+            @Override
+            public void handleLayoutInflated(LayoutInflatedParam liparam) throws Throwable {
+                FrameLayout notificationGuts = (FrameLayout) liparam.view;
+                LinearLayout notificationGutsLayout = (LinearLayout) notificationGuts.getChildAt(0);
+                
+                ImageButton pinButton = new ImageButton(liparam.view.getContext());
+                pinButton.setImageDrawable(res.getDrawable(R.drawable.ic_action_pin));
+                
+                ImageButton unpinButton = new ImageButton(liparam.view.getContext());
+                unpinButton.setImageDrawable(res.getDrawable(R.drawable.ic_action_unpin));
+
+                notificationGutsLayout.addView(pinButton);
+                notificationGutsLayout.addView(unpinButton);
+            }
+        });
+    }
 }
 
